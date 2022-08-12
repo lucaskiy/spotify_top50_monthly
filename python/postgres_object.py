@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import pandas as pd
+import numpy as np
 
 
 GET_PRIMARY_KEY = """
@@ -27,6 +28,15 @@ INSERT_QUERY = """
     DO NOTHING
 """
 
+SELECT_QUERY = """
+    SELECT
+        *
+    FROM
+        {}
+    WHERE 
+        extract(month FROM "date") = {};
+"""
+
 
 class PostgresObject:
     def __init__(self):
@@ -35,6 +45,7 @@ class PostgresObject:
         self.cursor = self.conn.cursor()
         self.query_get_primary_key = GET_PRIMARY_KEY
         self.insert_query = INSERT_QUERY
+        self.select_query = SELECT_QUERY
 
     def close_connection(self) -> None:
         """
@@ -82,3 +93,11 @@ class PostgresObject:
         pk_results = [item[0] for item in query_results]
         primary_key = ','.join(pk_results)
         return primary_key
+
+
+    def get_table_values(self, table_name: str, last_month: int):
+        query = self.select_query.format(table_name, last_month)
+        self.cursor.execute(query)
+        fetch = self.cursor.fetchall()
+        query_results = [item[0] for item in fetch]
+        return query_results

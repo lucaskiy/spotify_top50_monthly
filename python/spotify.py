@@ -7,7 +7,6 @@ from airflow.models import Variable
 from airflow.utils.email import send_email
 from datetime import datetime
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from pathlib import Path
 from python.boto3_utils import Boto3Utils
 from python.postgres_object import PostgresObject
 
@@ -128,8 +127,6 @@ class Spotify(PostgresObject):
 
         query = self.generate_query(df=top_artists, table_name="top_artists")
         return query
-
-
     def generate_tracks_query(self, **kwargs) -> str:
         print("Starting method to save tracks data into postgres database")
         key = kwargs['ti'].xcom_pull(task_ids="get_top_tracks")
@@ -139,19 +136,21 @@ class Spotify(PostgresObject):
         query = self.generate_query(df=top_tracks, table_name="top_tracks")
         return query
 
-    @staticmethod
-    def email_csvs(**kwargs):
-        top_tracks = kwargs['ti'].xcom_pull(key="email_tracks", task_ids="get_top_tracks")
-        top_artists = kwargs['ti'].xcom_pull(key="email_artist", task_ids="get_top_artists")
-        print("Spotify files retrieved successfully!")
+    def email_csvs(self, **kwargs):
+        key_tracks = kwargs['ti'].xcom_pull(task_ids="get_top_tracks")
+        top_tracks = self.boto3.get_s3_files(bucket=self.bucket, key=key_tracks)
+        
+        key_artists = kwargs['ti'].xcom_pull(task_ids="get_top_artists")
+        top_artists = self.boto3.get_s3_files(bucket=self.bucket, key=key_artists)
 
-        df_tracks = pd.DataFrame(top_tracks)
-        df_artists = pd.DataFrame(top_artists)
-        print(df_artists.head())
-        print(df_tracks.head())
+        past_month_tracks = self.get_past_month_data(table_name="top_tracks")
+        past_month_artists = self.get_past_month_data(table_name="top_artists")
 
-        df_tracks.to_csv("top_tracks.csv", index=False)
-        df_artists.to_csv("top_artists.csv", index=False)
+        if past_month_tracks != False and past_month_artists != False:
+            print("We are going to do something here")
+
+        top_tracks.to_csv("top_tracks.csv", index=False)
+        top_artists.to_csv("top_artists.csv", index=False)
 
         receivers = ["lucask.kiy@gmail.com"]
 
@@ -163,3 +162,14 @@ class Spotify(PostgresObject):
             files=["top_tracks.csv", "top_artists.csv"]
         )
         print(f"Email sent successfully to {receivers[0]}!")
+
+    def get_past_month_data(self, table_name: str):
+        last_month = int(datetime.now().month - 1)
+
+        last_month_data = self.get_table_values(table_name=table_name, last_month=last_month)
+        print(last_month_data)
+        if len(last_month_data) < 1:
+            print("Last month data is not available, try again next month!")
+            return False
+        else:
+            return pd.DataFrame(last_month_data)

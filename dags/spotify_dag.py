@@ -49,12 +49,12 @@ with dag:
         postgres_conn_id="postgres_local"
     )
 
-    # email_csv = PythonOperator(
-    #     task_id="send_email",
-    #     python_callable=spotify.email_csvs,
-    #     provide_context=True
-    # )
+    email_csv = PythonOperator(
+        task_id="send_email",
+        python_callable=spotify.email_csvs,
+        provide_context=True
+    )
 
 top_artists >> insert_artists_query >> save_artists_table
 top_tracks >> insert_tracks_query >> save_tracks_table
-# [save_artists, save_tracks] >> email_csv
+[save_artists_table, save_tracks_table] >> email_csv
