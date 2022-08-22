@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: stg_top_tracks
+    description: staged top tracks data
+    columns:
+      - name: unique_id 
+        tests:
+          - unique
+      - name: RANKING
+        tests:
+          - not_null
+      - name: DATA_COLETA
+        tests:
+          - not_null
+      - name: MUSICA
+        tests:
+          - not_null
+      - name: CANTOR
+        tests:
+          - not_null
+      - name: ALBUM
+        tests:
+          - not_null

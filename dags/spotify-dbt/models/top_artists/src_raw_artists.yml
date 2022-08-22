@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: artists
+    description: A clone of a BigQuery application database.
+    database: third-hangout-359213
+    schema: spotify_top
+    tables:
+      - name: raw_artists
+        description: Raw top artists data.
