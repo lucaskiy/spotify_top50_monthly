@@ -1,7 +1,8 @@
 .env
 .idea/
 venv/
-python/__pycache__/
+dags/python_scripts/__pycache__/
+dags/spotify-dbt/__pycache__/
 dags/__pycache__/
 logs/
 .vscode/

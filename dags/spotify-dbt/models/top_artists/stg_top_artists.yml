@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: stg_top_artists
+    description: staged top artists data
+    columns:
+      - name: unique_id
+        tests:
+          - unique
+      - name: RANKING
+        tests:
+          - not_null
+      - name: DATA_COLETA
+        tests:
+          - not_null
+      - name: ARTISTA
+        tests:
+          - not_null

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from re import M
 import pandas as pd
 import base64
 import requests
@@ -6,24 +7,19 @@ import json
 from airflow.models import Variable
 from airflow.utils.email import send_email
 from datetime import datetime
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from pathlib import Path
-from python.boto3_utils import Boto3Utils
-from python.postgres_object import PostgresObject
+from airflow.providers.google.cloud.hooks.gcs import GCSHook
 
 
-class Spotify(PostgresObject):
+class Spotify():
     def __init__(self):
         super().__init__()
         self.__token = self.get_spotify_access_token()
         self.user_uri = "https://api.spotify.com/v1/me/top/"
         # self.time_range = ['short_term', 'medium_term', 'long_term']
         self.time_range = ['short_term']
-        self.pg_hook = PostgresHook(postgres_conn_id="postgres_local")
-        self.conn = self.pg_hook.get_conn()
-        self.cursor = self.conn.cursor()
-        self.bucket = "spotify-api-bucket"
-        self.boto3 = Boto3Utils()
+        self.bucket = "spotify-top-api"
+        self.gcloud = GCSHook(gcp_conn_id="google-cloud")
 
     @staticmethod
     def config() -> dict:
@@ -56,7 +52,7 @@ class Spotify(PostgresObject):
         else:
             raise Exception(response.status_code, response.text)
 
-    def get_spotify_user_top_tracks(self) -> str:
+    def get_spotify_user_top_tracks_to_gcp_storage(self) -> str:
         uri = self.user_uri + "tracks"
         headers = {"Authorization": self.__token}
 
@@ -68,28 +64,36 @@ class Spotify(PostgresObject):
                 if response.status_code == 200:
                     res = json.loads(response.text)
                     for i, item in enumerate(res['items']):
-                        song_time = f"{int((item['duration_ms']/(1000*60))%60)}:{int((item['duration_ms']/1000)%60)}"
                         data = {
                             'rank': int(i+1),
                             'date': datetime.strftime(datetime.now(), "%Y-%m-%d"),
                             'song_name': str(item['name']).strip().lower().replace("'", ''),
                             'artist': str(item['artists'][0]['name']).strip().lower().replace("'", ''),
                             'album': str(item['album']['name']).strip().lower().replace("'", ''),
-                            'track_time': song_time,
-                            'release_date': str(item['album']['release_date'])
+                            'track_time_ms': int(item['duration_ms']),
+                            'release_date': str(item['album']['release_date']),
+                            'external_urls': str(item['external_urls']['spotify']),
+                            'images': str(item['album']['images'][0]['url']),
+                            'popularity': int(item['popularity']) if 'popularity' in item else None,
+                            'uri': str(item['uri'])
                         }
                         results.append(data)
+
             except Exception as e:
                 raise e
 
         print("Top tracks retrieved successfully")
-        key = f"top_tracks_{datetime.strftime(datetime.now(), '%Y-%m-%d')}.csv"
-        save_s3 = self.boto3.save_s3_files(bucket=self.bucket, key=key, data=results)
-        if save_s3:
-            print("Top tracks file saved on s3!!")
-            return key
+        df = pd.DataFrame(results)
+        file = df.to_csv(index=False)
+        filename = f"top_tracks_{datetime.strftime(datetime.now(), '%Y-%m-%d')}.csv"
 
-    def get_spotify_user_top_artists(self) -> str:
+        self.gcloud.upload(
+            bucket_name=self.bucket,
+            object_name=filename,
+            data=file)
+        return filename
+
+    def get_spotify_user_top_artists_to_gcp_storage(self) -> str:
         uri = self.user_uri + "artists"
         headers = {"Authorization": self.__token}
 
@@ -107,37 +111,31 @@ class Spotify(PostgresObject):
                             'artist': str(item['name']).strip().lower().replace("'", ''),
                             'followers': int(item['followers']['total']),
                             'genre': str(item['genres'][0]).strip().lower().replace("'", ''),
-                            'main_subgenre': str(item['genres'][1]).strip().lower().replace("'", '') if len(item['genres']) > 1 else None
+                            'main_subgenre': str(item['genres'][1]).strip().lower().replace("'", '') if len(item['genres']) > 1 else None,
+                            'external_urls': str(item['external_urls']['spotify']),
+                            'images': str(item['images'][0]['url']),
+                            'popularity': int(item['popularity']) if 'popularity' in item else None, 
+                            'uri': str(item['uri'])
                         }
                         results.append(data)
+
             except Exception as e:
                 raise e
 
         print("Top artists retrieved successfully")
-        key = f"top_artists_{datetime.strftime(datetime.now(), '%Y-%m-%d')}.csv"
-        save_s3 = self.boto3.save_s3_files(bucket=self.bucket, key=key, data=results)
-        if save_s3:
-            print("Top artists file saved on s3!!")
-            return key
+        df = pd.DataFrame(results)
+        file = df.to_csv(index=False)
+        filename = f"top_artists_{datetime.strftime(datetime.now(), '%Y-%m-%d')}.csv"
 
-    def generate_artists_query(self, **kwargs) -> str:
-        print("Starting method to save artists data into postgres database")
-        key = kwargs['ti'].xcom_pull(task_ids="get_top_artists")
-        top_artists = self.boto3.get_s3_files(bucket=self.bucket, key=key)
-        print(top_artists.head())
+        self.gcloud.upload(
+            bucket_name=self.bucket,
+            object_name=filename,
+            data=file)
+        return filename
 
-        query = self.generate_query(df=top_artists, table_name="top_artists")
-        return query
+    def create_tracks_bigquery_table():
+        pass
 
-
-    def generate_tracks_query(self, **kwargs) -> str:
-        print("Starting method to save tracks data into postgres database")
-        key = kwargs['ti'].xcom_pull(task_ids="get_top_tracks")
-        top_tracks = self.boto3.get_s3_files(bucket=self.bucket, key=key)
-        print(top_tracks.head())
-        
-        query = self.generate_query(df=top_tracks, table_name="top_tracks")
-        return query
 
     @staticmethod
     def email_csvs(**kwargs):
